@@ -36,6 +36,9 @@ function readAtomState<Value>(atom: Atom<Value>): AtomState<Value> {
   // meanwhile tracks its dependents
   const getter: Getter = <V>(a: Atom<V>) => {
     if (isSelfAtom(a, atom)) {
+      if (!isAtomStateInitialized(atomState) && hasInitialValue(atom)) {
+        return atom.init as unknown as V;
+      }
       return atomState.value as V;
     }
     const aState = readAtomState(a);
@@ -63,6 +66,16 @@ function ensureAtomState<Value>(atom: Atom<Value>): AtomState<Value> {
   return atomState;
 }
 
+function isAtomStateInitialized<Value>(atomState: AtomState<Value>): boolean {
+  return 'value' in atomState;
+}
+
+function hasInitialValue<T extends Atom<AnyValue>>(
+  atom: T
+): atom is T & { init: AnyValue } {
+  return 'init' in atom;
+}
+
 /**
  * Write into an atom and notify all its observers
  */
@@ -70,20 +83,23 @@ function writeAtomState<Value, Args extends unknown[], Result>(
   atom: WritableAtom<Value, Args, Result>,
   ...args: Args
 ): Result {
-  const getter: Getter = <V>(a: Atom<V>) => readAtomState(a).value as V
-  const setter: Setter = <V, As extends unknown[], R>(a: WritableAtom<V, As, R>, ...args: As) => {
-    const aState = ensureAtomState(a)
+  const getter: Getter = <V>(a: Atom<V>) => readAtomState(a).value as V;
+  const setter: Setter = <V, As extends unknown[], R>(
+    a: WritableAtom<V, As, R>,
+    ...args: As
+  ) => {
+    const aState = ensureAtomState(a);
     if (isSelfAtom(atom, a)) {
-      const v = args[0] as V
-      aState.value = v
-      notify(atom)
+      const v = args[0] as V;
+      aState.value = v;
+      notify(a);
 
-      return undefined as R
+      return undefined as R;
     }
-    return writeAtomState(a, ...args)
-  }
+    return writeAtomState(a, ...args);
+  };
 
-  return atom.write(getter, setter, ...args)
+  return atom.write(getter, setter, ...args);
 }
 
 function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
@@ -98,62 +114,79 @@ function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
  * `mountDependencies`, maybe.
  */
 function notify(atom: AnyAtom) {
-  const atomState = ensureAtomState(atom)
+  const atomState = ensureAtomState(atom);
   for (const a of atomState.dependents) {
-    notify(a)
+    notify(a);
   }
   for (const l of atomState.listeners) {
-    l()
+    l();
   }
 }
 
-export function useAtom<Value, Args extends unknown[], Result>(atom: Atom<Value> | WritableAtom<Value, Args, Result>) {
+/**
+ * The real `useAtom` actually has many overloads for better ergonomics.
+ * @see https://newsletter.daishikato.com/p/how-jotai-hooks-use-function-overload-in-typescript
+ */
+export function useAtom<Value, Args extends unknown[], Result>(
+  atom: Atom<Value> | WritableAtom<Value, Args, Result>
+) {
   return [
     useAtomValue(atom),
     useSetAtom(atom as WritableAtom<Value, Args, Result>),
-  ] as const
+  ] as const;
 }
 
 export function useAtomValue<Value>(atom: Atom<Value>): Value {
-  const [[valueFromReducer, atomFromReducer], rerender] =
-    useReducer<readonly [Value, typeof atom], undefined, []>((prev) => {
-      const atomState = readAtomState(atom)
-      const nextValue = atomState.value
+  const [[valueFromReducer, atomFromReducer], rerender] = useReducer<
+    readonly [Value, typeof atom],
+    undefined,
+    []
+  >(
+    (prev) => {
+      const atomState = readAtomState(atom);
+      const nextValue = atomState.value;
 
       if (Object.is(nextValue, prev[0]) && prev[1] === atom) {
-        return prev
+        return prev;
       }
 
-      return [nextValue as Value, atom]
+      return [nextValue as Value, atom];
     },
     undefined,
     () => [readAtomState(atom).value as Value, atom]
-  )
+  );
 
-  let value = valueFromReducer
+  let value = valueFromReducer;
   if (atomFromReducer !== atom) {
-    rerender()
-    value = readAtomState(atom).value as Value
+    rerender();
+    value = readAtomState(atom).value as Value;
   }
 
   useEffect(() => {
     // subscribe
-    const atomState = readAtomState(atom)
-    atomState.listeners.add(rerender)
+    const atomState = readAtomState(atom);
+    atomState.listeners.add(rerender);
 
-    rerender()
+    rerender();
 
     // unsubscribe
-    return () => { atomState.listeners.delete(rerender) }
-  }, [atom])
+    return () => {
+      atomState.listeners.delete(rerender);
+    };
+  }, [atom]);
 
-  return value
+  return value;
 }
 
-function useSetAtom<Value, Args extends unknown[], Result>(atom: WritableAtom<Value, Args, Result>) {
-  const setAtom = useCallback((...args: Args) => {
-    return writeAtomState(atom, ...args)
-  }, [atom])
+function useSetAtom<Value, Args extends unknown[], Result>(
+  atom: WritableAtom<Value, Args, Result>
+) {
+  const setAtom = useCallback(
+    (...args: Args) => {
+      return writeAtomState(atom, ...args);
+    },
+    [atom]
+  );
 
-  return setAtom
+  return setAtom;
 }

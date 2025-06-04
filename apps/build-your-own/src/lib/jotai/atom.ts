@@ -47,7 +47,9 @@ type WithInitialValue<Value> = {
   init: Value;
 };
 
-/** Various overloads of atom creators */
+/**
+ * Below are various overloads of atom constructor
+ */
 
 // primitive atom without initial value
 export function atom<Value>(): PrimitiveAtom<Value | undefined> &
@@ -109,4 +111,3 @@ function defaultWrite<Value>(
     typeof arg === 'function' ? (arg as (prev: Value) => Value)(get(this)) : arg
   );
 }
-
