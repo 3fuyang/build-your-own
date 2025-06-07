@@ -1,26 +1,13 @@
 import { useCallback, useEffect, useReducer } from 'react';
 
 import type { Atom, Getter, Setter, WritableAtom } from './atom';
-
-type AnyValue = unknown;
-type AnyAtom = Atom<AnyValue>;
-
-/**
- * State tracked for mounted atoms. An atom is considered "mounted" if it has a
- * subscriber, or is a transitive dependency of another atom that has a
- * subscriber.
- */
-interface AtomState<Value = AnyValue> {
-  value?: Value;
-  /** Set of listeners to notify when the atom value changes */
-  readonly listeners: Set<() => void>;
-  /**
-   * Set of mounted atoms that depends on this atom
-   *
-   * > If B depends on A, it means that A is a dependency of B, and B is a dependent on A.
-   */
-  readonly dependents: Set<AnyAtom>;
-}
+import {
+  hasInitialValue,
+  isAtomStateInitialized,
+  isSelfAtom,
+  type AnyAtom,
+  type AtomState,
+} from './internals';
 
 const atomStateMap: WeakMap<AnyAtom, AtomState> = new WeakMap();
 
@@ -66,16 +53,6 @@ function ensureAtomState<Value>(atom: Atom<Value>): AtomState<Value> {
   return atomState;
 }
 
-function isAtomStateInitialized<Value>(atomState: AtomState<Value>): boolean {
-  return 'value' in atomState;
-}
-
-function hasInitialValue<T extends Atom<AnyValue>>(
-  atom: T
-): atom is T & { init: AnyValue } {
-  return 'init' in atom;
-}
-
 /**
  * Write into an atom and notify all its observers
  */
@@ -100,10 +77,6 @@ function writeAtomState<Value, Args extends unknown[], Result>(
   };
 
   return atom.write(getter, setter, ...args);
-}
-
-function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
-  return atom === a;
 }
 
 /**

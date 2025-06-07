@@ -1,3 +1,8 @@
+// 1. Store & Provider API (Provider-less mode)
+// 2. Async atoms (Suspense integration, abortable)
+// 3. Atom utils like persistency (w/ Client storage)
+// 4. Resettable
+
 /**
  * Meta description of an atom, which itself does not hold a value.
  */
