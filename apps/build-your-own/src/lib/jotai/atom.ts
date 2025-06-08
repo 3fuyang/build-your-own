@@ -3,6 +3,8 @@
 // 3. Atom utils like persistency (w/ Client storage)
 // 4. Resettable
 
+import type { OnMount } from "./internals";
+
 /**
  * Meta description of an atom, which itself does not hold a value.
  */
@@ -42,6 +44,7 @@ type Write<Args extends unknown[], Result> = (
 export interface WritableAtom<Value, Args extends unknown[], Result>
   extends Atom<Value> {
   write: Write<Args, Result>;
+  onMount?: OnMount<Args, Result>
 }
 
 type SetStateAction<Value> = Value | ((prev: Value) => Value);
@@ -88,6 +91,7 @@ export function atom<Value, Args extends unknown[], Result>(
     WithInitialValue<Value | undefined>;
 
   if (typeof read === 'function') {
+    // Derived atoms
     config.read = read as Read<Value>;
   } else {
     // Primitive atom or write-only derived atom
@@ -96,6 +100,7 @@ export function atom<Value, Args extends unknown[], Result>(
     config.write = write ?? (defaultWrite as unknown as Write<Args, Result>);
   }
   if (write) {
+    // Writable derived atom
     config.write = write;
   }
   return config;

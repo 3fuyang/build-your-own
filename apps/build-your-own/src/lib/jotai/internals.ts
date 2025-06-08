@@ -1,8 +1,18 @@
-import type { Atom } from './atom';
+import type { Atom, WritableAtom } from './atom';
 
 export type AnyValue = unknown;
 export type AnyAtom = Atom<AnyValue>;
 export type AnyError = unknown;
+export type EpochNumber = number;
+export type OnUnmount = () => void;
+export type SetAtom<Args extends unknown[], Result> = <A extends Args>(
+  ...args: A
+) => Result;
+export type OnMount<Args extends unknown[], Result> = <
+  S extends SetAtom<Args, Result>
+>(
+  setAtom: S
+) => OnUnmount | void;
 
 /**
  * State tracked for mounted atoms. An atom is considered "mounted" if it has a
@@ -14,8 +24,10 @@ export interface AtomState<Value = AnyValue> {
   error?: AnyError;
   /** Set of listeners to notify when the atom value changes. */
   readonly listeners: Set<() => void>;
-  /** Set of mounted atoms that the atom depends on. */
-  readonly dependencies: Set<AnyAtom>
+  /** Map of atoms that the atom depends on. */
+  readonly dependencies: Map<AnyAtom, EpochNumber>;
+  /** The epoch number of the atom, which serves as a "last modified" identifier. */
+  n: EpochNumber;
 }
 
 /**
@@ -24,16 +36,18 @@ export interface AtomState<Value = AnyValue> {
  * subscriber.
  * The mounted state of an atom is freed once it is no longer mounted.
  */
-export interface Mounted extends Pick<AtomState, 'dependencies' | 'listeners'> {
+export interface Mounted extends Pick<AtomState, 'listeners'> {
   /**
    * Set of mounted atoms that depends on this atom.
    *
    * > If B depends on A, it means that A is a dependency of B, and B is a dependent on A.
    */
   readonly dependents: Set<AnyAtom>;
+  /** Set of mounted atoms that this atom depends on. */
+  readonly dependencies: Set<AnyAtom>;
 
   /** Function to run when the atom is unmounted. */
-  onUnmount?: () => void
+  onUnmount?: OnUnmount;
 }
 
 export function returnAtomValue<Value>(atomState: AtomState<Value>): Value {
@@ -60,4 +74,10 @@ export function hasInitialValue<T extends Atom<AnyValue>>(
 
 export function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
   return atom === a;
+}
+
+export type AnyWritableAtom = WritableAtom<AnyValue, unknown[], unknown>;
+
+export function isActuallyWritableAtom(atom: AnyAtom): atom is AnyWritableAtom {
+  return !!(atom as AnyWritableAtom).write;
 }
