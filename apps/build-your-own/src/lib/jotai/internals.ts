@@ -15,9 +15,10 @@ export type OnMount<Args extends unknown[], Result> = <
 ) => OnUnmount | void;
 
 /**
- * State tracked for mounted atoms. An atom is considered "mounted" if it has a
- * subscriber, or is a transitive dependency of another atom that has a
- * subscriber.
+ * Mutable atom state,
+ * tracked for both mounted and unmounted atoms in a store.
+ *
+ * Should be garbage collectable.
  */
 export interface AtomState<Value = AnyValue> {
   value?: Value;
@@ -26,7 +27,10 @@ export interface AtomState<Value = AnyValue> {
   readonly listeners: Set<() => void>;
   /** Map of atoms that the atom depends on. */
   readonly dependencies: Map<AnyAtom, EpochNumber>;
-  /** The epoch number of the atom, which serves as a "last modified" identifier. */
+  /**
+   * The epoch-like number of the atom (does nothing with the `Date` stuff),
+   * functioning like a **version number**.
+   */
   n: EpochNumber;
 }
 
@@ -78,6 +82,9 @@ export function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
 
 export type AnyWritableAtom = WritableAtom<AnyValue, unknown[], unknown>;
 
+/**
+ * @returns `true` if the atom is created with a `write` function
+ */
 export function isActuallyWritableAtom(atom: AnyAtom): atom is AnyWritableAtom {
   return !!(atom as AnyWritableAtom).write;
 }

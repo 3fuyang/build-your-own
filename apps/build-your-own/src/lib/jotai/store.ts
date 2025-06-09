@@ -12,20 +12,34 @@ import {
   type OnUnmount,
 } from './internals';
 
+type UnSub = () => void;
+type Sub = (atom: AnyAtom, listener: () => void) => UnSub;
+
 export interface Store {
   get: <Value>(atom: Atom<Value>) => Value;
   set: <Value, Args extends unknown[], Result>(
     atom: WritableAtom<Value, Args, Result>,
     ...args: Args
   ) => Result;
-  sub: (atom: AnyAtom, listener: () => void) => () => void;
+  sub: Sub;
 }
 
+//
+// Below interfaces are literally `Map`s or `Set`s,
+// exposing only restricted APIs for better abstraction.
+//
+
+/**
+ * WeakMap of atom states (value, listeners, dependencies, etc.) in a specific store.
+ */
 interface AtomStateMap {
   get(atom: AnyAtom): AtomState | undefined;
   set(atom: AnyAtom, atomState: AtomState): void;
 }
 
+/**
+ * WeakMap of atom states that are mounted (has a dependent)
+ */
 interface MountedMap {
   get(atom: AnyAtom): Mounted | undefined;
   has(atom: AnyAtom): boolean;
@@ -33,6 +47,10 @@ interface MountedMap {
   delete(atom: AnyAtom): void;
 }
 
+/**
+ * Map which tracks atoms that are stale and need to be recomputed,
+ * also storing their `n` for comparison.
+ */
 type InvalidatedAtoms = {
   get(atom: AnyAtom): EpochNumber | undefined;
   has(atom: AnyAtom): boolean;
@@ -40,6 +58,10 @@ type InvalidatedAtoms = {
   delete(atom: AnyAtom): void;
 };
 
+/**
+ * Set which tracks atoms that have changed during the current update cycle,
+ * so that we could propagate the updates to dependents and execute listeners, etc.
+ */
 interface ChangedAtoms {
   readonly size: number;
   add(atom: AnyAtom): void;
@@ -49,6 +71,10 @@ interface ChangedAtoms {
   [Symbol.iterator](): IterableIterator<AnyAtom>;
 }
 
+/**
+ * Set of OnMount or OnUnmount callbacks,
+ * also cleared after execution.
+ */
 interface Callbacks {
   readonly size: number;
   add(fn: () => void): void;
@@ -59,7 +85,7 @@ interface Callbacks {
 type EnsureAtomState = <Value>(atom: Atom<Value>) => AtomState<Value>;
 type FlushCallbacks = () => void;
 type RecomputeInvalidatedAtoms = () => void;
-/** Compute an atom' state and return it. */
+/** Compute an atom's state and return it. */
 type ReadAtomState = <Value>(atom: Atom<Value>) => AtomState<Value>;
 type InvalidateDependents = (atom: AnyAtom) => void;
 type AtomRead = <Value>(
@@ -90,6 +116,9 @@ export function createStore(): Store {
   return buildStore();
 }
 
+/**
+ * Default store for provider-less mode.
+ */
 let defaultStore: Store | undefined;
 
 export function getDefaultStore(): Store {
@@ -107,12 +136,8 @@ export function buildStore(
   mountCallbacks: Callbacks = new Set(),
   unmountCallbacks: Callbacks = new Set()
 ): Store {
-  /** Atom state getter, initializing the state if empty. */
+  /** Atom state getter, initializing the state in the map if needed. */
   const ensureAtomState: EnsureAtomState = (atom) => {
-    if (!atom) {
-      throw new Error('Atom is undefined or null');
-    }
-
     let atomState = atomStateMap.get(atom);
     if (!atomState) {
       atomState = {
@@ -138,21 +163,33 @@ export function buildStore(
     };
     do {
       const callbacks = new Set<() => void>();
+      /**
+       * The purpose of this bound `add` is to be passed to `forEach`,
+       * and stays intact from other parameters passed by `forEach`
+       * to the callback.
+       */
       const add = callbacks.add.bind(callbacks);
 
+      // Enqueue listeners of changed atoms,
+      // usually React state dispatchers.
       changedAtoms.forEach((atom) => {
         mountedMap.get(atom)?.listeners.forEach(add);
       });
       changedAtoms.clear();
 
+      // First `onUnmount` callbacks
       unmountCallbacks.forEach(add);
       unmountCallbacks.clear();
 
+      // Then `onMount` callbacks
       mountCallbacks.forEach(add);
       mountCallbacks.clear();
 
+      // Now execute all of them!
       callbacks.forEach(call);
 
+      // This checks if any atoms were marked as "changed"
+      // during the callback execution above, sort of a recursive process.
       if (changedAtoms.size) {
         recomputeInvalidatedAtoms();
       }
@@ -164,6 +201,10 @@ export function buildStore(
     }
   };
 
+  /**
+   * Iterates an atom's dependencies and mount them and tracks the dependency
+   * if they are not mounted yet.
+   */
   const mountDependencies: MountDependencies = (atom) => {
     const atomState = ensureAtomState(atom);
     const mounted = mountedMap.get(atom);
@@ -219,8 +260,8 @@ export function buildStore(
       }
     }
 
-    // Recompute all affected atoms
-    // Track what's changed, so that we can bypass unchanged deps when possible
+    // Recompute all affected atoms.
+    // Track what's changed, so that we can bypass unchanged deps when possible.
     for (let i = topSortedReversed.length - 1; i >= 0; i--) {
       const [a, aState] = topSortedReversed[i];
       let hasChangedDeps = false;
@@ -244,6 +285,8 @@ export function buildStore(
     if (isAtomStateInitialized(atomState)) {
       // If the atom is mounted, we can use cached atom state,
       // if it has been updated by dependencies.
+      // NOTE: If an atom's current `n` doesn't match its invalidate `n`,
+      // it means the atom has been updated since invalidation.
       if (mountedMap.has(atom) && invalidatedAtoms.get(atom) !== atomState.n) {
         return atomState;
       }
@@ -260,7 +303,9 @@ export function buildStore(
         return atomState;
       }
     }
-    // Compute a new state for this atom
+
+    // If not initialized, compute a new state for this atom,
+    // clearing the stale dependencies first.
     atomState.dependencies.clear();
     const getter: Getter = <V>(a: Atom<V>) => {
       if (isSelfAtom(atom, a)) {
@@ -299,10 +344,15 @@ export function buildStore(
       ++atomState.n;
       return atomState;
     } finally {
-      if (
+      /**
+       * Mark atom as changed if:
+       * 1. `n` changes from the previous one, meaning the atom is changed
+       * 2. Previous `n` matches the invalidated one's, meaning the value is stale
+       */
+      const shouldInvalidate =
         prevEpochNumber !== atomState.n &&
-        invalidatedAtoms.get(atom) === prevEpochNumber
-      ) {
+        invalidatedAtoms.get(atom) === prevEpochNumber;
+      if (shouldInvalidate) {
         invalidatedAtoms.set(atom, atomState.n);
         changedAtoms.add(atom);
       }
@@ -359,9 +409,11 @@ export function buildStore(
     const atomState = ensureAtomState(atom);
     let mounted = mountedMap.get(atom);
     if (!mounted) {
-      // recompute atom state
+      // recompute atom state,
+      // the dependencies are tracked during it
       readAtomState(atom);
-      // mount dependencies first
+      // Mount all the referenced atoms recursively first (since this atom is relying on them),
+      // and register the atom as a dependent on them
       for (const a of atomState.dependencies.keys()) {
         const aMounted = mountAtom(a);
         aMounted.dependents.add(atom);
@@ -375,7 +427,10 @@ export function buildStore(
       mountedMap.set(atom, mounted);
     }
 
+    // Register `onMount` callbacks, which will optionally return
+    // an `onUnmount` callback during execution.
     if (isActuallyWritableAtom(atom)) {
+      /** Just a callback, not executing right now. */
       const processOnMount = () => {
         const setAtom = (...args: unknown[]) => {
           return writeAtomState(atom, ...args);
@@ -388,26 +443,33 @@ export function buildStore(
           };
         }
       };
+
       mountCallbacks.add(processOnMount);
     }
 
     return mounted;
   };
 
+  /**
+   * **Attempt** to unmount an atom,
+   * but will certainly not proceed
+   * if it still got dependents.
+   * @returns `undefined` if successfully unmounted; the mounted atom if it's still being referenced.
+   */
   const unmountAtom: UnmountAtom = (atom) => {
     const atomState = ensureAtomState(atom);
     let mounted = mountedMap.get(atom);
-    if (
+    const shouldUnmount =
       mounted &&
       !mounted.listeners.size &&
       !Array.from(mounted.dependents).some((a) =>
         mountedMap.get(a)?.dependencies.has(atom)
-      )
-    ) {
+      );
+    if (shouldUnmount) {
       // unmount self
       mounted = undefined;
       mountedMap.delete(atom);
-      // unmount dependencies
+      // unmount dependencies recursively
       for (const a of atomState.dependencies.keys()) {
         const aMounted = unmountAtom(a);
         aMounted?.dependents.delete(atom);
