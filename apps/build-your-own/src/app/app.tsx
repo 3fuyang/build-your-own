@@ -14,13 +14,26 @@ function App() {
         <h3 className="font-semibold">{'<Counter />'}</h3>
         <Counter />
       </section>
-      <section className="border border-dashed p-2">
+      <section className="border border-dashed p-2 mb-2">
         <h3 className="font-semibold">{'<DoubleCounter />'}</h3>
         <DoubleCounter />
       </section>
-      <h2 className="text-lg font-semibold mb-2">Providers</h2>
+      <h2 className="text-lg font-semibold mb-2">Stores and Providers</h2>
       <section className="border border-dashed p-2 mb-2">
-        <h3 className="font-semibold">{'<ScopedCounter />'}</h3>
+        <h3 className="font-semibold">
+          {'With the default store (Provider-less mode)'}
+        </h3>
+        <p>Should sync with the components in "Derived Atoms"</p>
+        <Counter />
+      </section>
+      <section className="border border-dashed p-2 mb-2">
+        <h3 className="font-semibold">
+          {'With a dedicated store (Explicit Provider)'}
+        </h3>
+        <p>
+          Owns its own copy of state, even though the atom is the same with
+          those used above
+        </p>
         <Provider>
           <ScopedCounter />
         </Provider>
