@@ -1,8 +1,8 @@
 import { useEffect, useReducer } from 'react';
 
-import type { Atom } from '../atom';
-import { useStore } from '../provider';
-import type { Store } from '../store';
+import type { Atom } from '../vanilla/atom';
+import { useStore } from './provider';
+import type { Store } from '../vanilla/internals';
 
 export function useAtomValue<Value>(atom: Atom<Value>): Value {
   const store = useStore();

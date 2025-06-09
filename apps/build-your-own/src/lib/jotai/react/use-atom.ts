@@ -1,4 +1,4 @@
-import type { Atom, WritableAtom } from '../atom';
+import type { Atom, WritableAtom } from '../vanilla/atom';
 import { useAtomValue } from './use-atom-value';
 import { useSetAtom } from './use-set-atom';
 

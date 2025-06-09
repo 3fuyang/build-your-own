@@ -1,16 +1,58 @@
 import type { Atom, Getter, Setter, WritableAtom } from './atom';
-import {
-  hasInitialValue,
-  isActuallyWritableAtom,
-  isAtomStateInitialized,
-  isSelfAtom,
-  returnAtomValue,
-  type AnyAtom,
-  type AtomState,
-  type EpochNumber,
-  type Mounted,
-  type OnUnmount,
-} from './internals';
+
+export type AnyValue = unknown;
+export type AnyAtom = Atom<AnyValue>;
+export type AnyError = unknown;
+export type EpochNumber = number;
+export type OnUnmount = () => void;
+export type SetAtom<Args extends unknown[], Result> = <A extends Args>(
+  ...args: A
+) => Result;
+export type OnMount<Args extends unknown[], Result> = <
+  S extends SetAtom<Args, Result>
+>(
+  setAtom: S
+) => OnUnmount | void;
+
+/**
+ * Mutable atom state,
+ * tracked for both mounted and unmounted atoms in a store.
+ *
+ * Should be garbage collectable.
+ */
+export interface AtomState<Value = AnyValue> {
+  value?: Value;
+  error?: AnyError;
+  /** Set of listeners to notify when the atom value changes. */
+  readonly listeners: Set<() => void>;
+  /** Map of atoms that the atom depends on. */
+  readonly dependencies: Map<AnyAtom, EpochNumber>;
+  /**
+   * The epoch-like number of the atom (does nothing with the `Date` stuff),
+   * functioning like a **version number**.
+   */
+  n: EpochNumber;
+}
+
+/**
+ * State tracked for mounted atoms. An atom is considered "mounted" if it has a
+ * subscriber, or is a transitive dependency of another atom that has a
+ * subscriber.
+ * The mounted state of an atom is freed once it is no longer mounted.
+ */
+export interface Mounted extends Pick<AtomState, 'listeners'> {
+  /**
+   * Set of mounted atoms that depends on this atom.
+   *
+   * > If B depends on A, it means that A is a dependency of B, and B is a dependent on A.
+   */
+  readonly dependents: Set<AnyAtom>;
+  /** Set of mounted atoms that this atom depends on. */
+  readonly dependencies: Set<AnyAtom>;
+
+  /** Function to run when the atom is unmounted. */
+  onUnmount?: OnUnmount;
+}
 
 type UnSub = () => void;
 type Sub = (atom: AnyAtom, listener: () => void) => UnSub;
@@ -111,22 +153,6 @@ type MountDependencies = (atom: AnyAtom) => void;
 const atomRead: AtomRead = (atom, ...params) => atom.read(...params);
 const atomWrite: AtomWrite = (atom, ...params) => atom.write(...params);
 const atomOnMount: AtomOnMount = (atom, setAtom) => atom.onMount?.(setAtom);
-
-export function createStore(): Store {
-  return buildStore();
-}
-
-/**
- * Default store for provider-less mode.
- */
-let defaultStore: Store | undefined;
-
-export function getDefaultStore(): Store {
-  if (!defaultStore) {
-    defaultStore = createStore();
-  }
-  return defaultStore;
-}
 
 export function buildStore(
   atomStateMap: AtomStateMap = new WeakMap(),
@@ -531,4 +557,39 @@ function setAtomStateValue(
   if (!hasPrevValue || !Object.is(prevValue, atomState.value)) {
     ++atomState.n;
   }
+}
+
+export function returnAtomValue<Value>(atomState: AtomState<Value>): Value {
+  if ('error' in atomState) {
+    throw atomState.error;
+  }
+  if (!('value' in atomState)) {
+    throw new Error('atom state is not initialized');
+  }
+  return atomState.value as Value;
+}
+
+export function isAtomStateInitialized<Value>(
+  atomState: AtomState<Value>
+): boolean {
+  return 'value' in atomState || 'error' in atomState;
+}
+
+export function hasInitialValue<T extends Atom<AnyValue>>(
+  atom: T
+): atom is T & { init: AnyValue } {
+  return 'init' in atom;
+}
+
+export function isSelfAtom(atom: AnyAtom, a: AnyAtom): boolean {
+  return atom === a;
+}
+
+export type AnyWritableAtom = WritableAtom<AnyValue, unknown[], unknown>;
+
+/**
+ * @returns `true` if the atom is created with a `write` function
+ */
+export function isActuallyWritableAtom(atom: AnyAtom): atom is AnyWritableAtom {
+  return !!(atom as AnyWritableAtom).write;
 }

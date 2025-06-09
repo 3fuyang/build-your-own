@@ -1,6 +1,6 @@
 import { useAtom } from '../lib/jotai/react/use-atom';
-import { atom } from '../lib/jotai/atom';
-import { Provider } from '../lib/jotai/provider';
+import { atom } from '../lib/jotai/vanilla/atom';
+import { Provider } from '../lib/jotai/react/provider';
 
 const countAtom = atom(0);
 const doubleAtom = atom<number>((get) => get(countAtom) * 2);

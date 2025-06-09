@@ -6,7 +6,8 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { createStore, getDefaultStore, type Store } from './store';
+import { createStore, getDefaultStore } from '../vanilla/store';
+import type { Store } from '../vanilla/internals';
 
 interface Options {
   store?: Store;

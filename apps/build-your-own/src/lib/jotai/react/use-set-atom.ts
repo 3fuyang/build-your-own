@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
-import type { WritableAtom } from '../atom';
-import { useStore } from '../provider';
+import type { WritableAtom } from '../vanilla/atom';
+import { useStore } from './provider';
 
 export function useSetAtom<Value, Args extends unknown[], Result>(
   atom: WritableAtom<Value, Args, Result>
