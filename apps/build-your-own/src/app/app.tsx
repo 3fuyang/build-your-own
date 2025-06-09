@@ -1,4 +1,4 @@
-import { useAtom } from '../lib/jotai/use-atom';
+import { useAtom } from '../lib/jotai/react/use-atom';
 import { atom } from '../lib/jotai/atom';
 import { Provider } from '../lib/jotai/provider';
 

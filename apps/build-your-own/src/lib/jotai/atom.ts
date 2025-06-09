@@ -51,7 +51,7 @@ type SetStateAction<Value> = Value | ((prev: Value) => Value);
 
 type PrimitiveAtom<Value> = WritableAtom<Value, [SetStateAction<Value>], void>;
 
-type WithInitialValue<Value> = {
+interface WithInitialValue<Value> {
   init: Value;
 };
 
